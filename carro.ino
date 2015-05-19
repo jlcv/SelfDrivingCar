@@ -1,112 +1,173 @@
-const int ultrasonico = 10;
-const int qrdInput = 3;
-const int enableH = 6;
-const int direccion = 2;
+#include <EEPROM.h>
+#include <TimerOne.h>
 
-double d;
-double cm;
-int qrd;
+//Hbridge Motor Control
+const int qrd= 2;   //Half Bridge 1 Enable
+int contador;
 
-int sum_ds;
-int s4;
-int s5;
-int s6;
-int s7;
-int EstadoAnteriorS7 = 0;
-int cambioDir;
+const int EN=9;   //Half Bridge 1 Enable
+const int MC1=3;  //Motor Control 1
+const int MC2=7;  //Motor Control 2
+const int POT=0;  //POT on Analog Pin 0
+const int pb=4;
 
-double dc;
-double dcHold;
+const int anPin = A0;
+double velocidadActual;
+double errorActual;
+double errorAnterior;
+double estadoAnterior;
+double control;
+int x;
+int potencia;
+double distancia;
+double ts=.68;
+ int numberOfRevs;
+long anVolt, inches, cm;
+boolean avanzando;
+boolean refresco;
 
-int dirCarro = 0;
 
-const int switch4 = A3;
-const int switch5 = A5;
-const int switch6 = A4;
-const int switch7 = A2;
 
-void setup() {
+void setup()
+{
   Serial.begin(9600);
-  pinMode(qrdInput, INPUT);
-  pinMode(switch4, INPUT);
-  pinMode(switch5, INPUT);
-  pinMode(switch6, INPUT);
-  pinMode(switch7, INPUT);
+  contador=0;
   
-  pinMode(direccion, OUTPUT);
-  digitalWrite(direccion, dirCarro);
-}
-
-//poner led para declarar que esta en apagado este pdo
-void loop() {
-//  if(){}else{} para prendido y apagado
-  leerUltrasonico();
-  leerQRD();
-  imprimir();
-  //checarObjetivo() este para frenar o seguir moviendo el carro
-  //calcularPD(); este metodo da el dc que ahorita es con switch
-  //AccionDeControl() 
-  moverCarro();// este va a dentro de checar objetivo
-  //pararCarro()// 
-  delay(300);
-}
-
-void imprimir(){
-//  Serial.print("QRD: ");
-//  Serial.println(qrd);
-  Serial.print("  |  Distancia: ");
-  Serial.println(cm);
-}
-
-void moverCarro(){
-  leerSwitches();
-  potenciaMotor();
-  analogWrite(enableH, dc);
-}
-
-void leerUltrasonico(){
-  d = analogRead(ultrasonico) / 2;
-  cm = d * 2.54;
-}
-
-void leerQRD(){
-  qrd = digitalRead(qrdInput);
-}
-
-void leerSwitches(){
-  s4 = digitalRead(switch4) * 1;
-  s5 = digitalRead(switch5) * 2;
-  s6 = digitalRead(switch6) * 4;
-  s7 = digitalRead(switch7);
+  pinMode(pb,INPUT);
+  pinMode(EN, OUTPUT);
+  pinMode(MC1, OUTPUT);
+  pinMode(MC2, OUTPUT);
   
-  if(s7 == 1 && EstadoAnteriorS7 == 0){
-    EstadoAnteriorS7 = s7;
-    cambiarDireccion();
-  }else if(s7 == 0 && EstadoAnteriorS7 == 1){
-    EstadoAnteriorS7 = s7;
-    cambiarDireccion();
+  avanzando = false;
+  refresco = false;
+
+  velocidadActual=0;
+ 
+  errorActual=0;
+  errorAnterior=0;
+  estadoAnterior=0;
+  control=0;
+
+  x=0;
+  potencia = 0;
+  numberOfRevs=0;
+  
+}
+
+void loop()
+{
+
+  x=digitalRead(qrd);
+    Serial.println(x);
+  
+  potencia = pid();
+  
+  if(!refresco) {
+    if(digitalRead(pb) == HIGH && avanzando == true) {
+      brake(potencia);
+      refresco = true;
+      delay(1000);
+    }
+    else if (digitalRead(pb) == HIGH && avanzando == false) { //parado y se quiere que avance  
+      attachInterrupt(0, qrdInterrupt, RISING);
+      Timer1.initialize(680000);                       
+      Timer
+      refresco = true;
+    }
+  } else {
+    
+       distancia = leerUltrasonico();
+       Serial.println(distancia);
+       int inputQrd = digitalRead(qrd);
+       Serial.println(inputQrd);
+  if (avanzando)
+  {
+    if (distancia <= 100) 
+    {
+      brake(potencia);
+    } 
+  } else
+  {
+     if (distancia <= 100)
+     {
+       
+     } else
+     {
+        forward(128); 
+     }
+  } 
   }
   
-  sum_ds = s4 + s5 + s6;
-}
-
-void potenciaMotor(){
-  dc = ((sum_ds * 75) / 7) + 75;
-}
-
-void cambiarDireccion(){
-  dcHold = dc;
-  dc = 0;
-  analogWrite(enableH, dc);
   
-  if(dirCarro == 0){
-    dirCarro = 1;
-    digitalWrite(direccion, dirCarro);
-  }else{
-    dirCarro = 0;
-    digitalWrite(direccion, dirCarro);
+  
+  
+ 
+  
+}
+
+void pid()
+{
+   detachInterrupt(qrd);
+    double tau=1.7;
+    double  kp=2;
+    double to= 0.0316;
+    double ti=0.117144;
+    //double velocidadDeseada=.500794726;
+    //velocidadActual=checkSpeed();
+   
+    errorActual=128-estadoAnterior; 
+    control = estadoAnterior + ((ts*kp)/(ti) + kp) * errorActual - kp * errorAnterior;
+    estadoAnterior=control;
+    errorAnterior=errorActual;
+    control = map(control, 0, 1, 0, 128);
+}
+
+void forward (double rate)
+{
+  digitalWrite(MC1, HIGH);
+  digitalWrite(MC2, LOW);
+  analogWrite(EN, rate);
+}
+
+double checkSpeed()
+{
+   double speed = numberOfRevs/ts;
+   numberOfRevs = 0; 
+   speed = speed * 16.1;
+   return speed;
+}
+
+void qrdInterrupt()
+{
+  numberOfRevs++;
+}
+
+void brake (int potencia)
+{
+  
+  for(int i=potencia;i>0;i/2)
+  {
+  //digitalWrite(EN, LOW);
+  digitalWrite(MC1, HIGH);
+  digitalWrite(MC2, LOW);
+  analogWrite(EN, i);
+  delay(10);
   }
   
-  dc = dcHold;
-  analogWrite(enableH, dc);  
 }
+
+double leerUltrasonico()
+{
+    anVolt = analogRead(anPin)/2;
+    delay(10);
+    
+ 
+  cm = anVolt * 2.54;
+  Serial.print(cm);
+  Serial.print("cm");
+  Serial.println();
+  //reset sample total
+  delay(50);
+  return cm;
+}
+
